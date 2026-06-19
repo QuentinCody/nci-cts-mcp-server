@@ -24,6 +24,8 @@ export function registerCodeMode(
 
     const executeTool = createExecuteTool({
         prefix: "nci_cts",
+        // Verifiable provenance: nci_cts_execute results carry a _meta.citation.
+        source: { id: "nci_cts", name: "NCI Clinical Trials Search", url: "https://www.cancer.gov/about-cancer/treatment/clinical-trials", license: "U.S. Public Domain" },
         catalog: nciCtsCatalog,
         apiFetch,
         doNamespace: env.NCI_CTS_DATA_DO,
