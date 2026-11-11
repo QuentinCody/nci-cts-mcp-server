@@ -1,67 +1,15 @@
 import type { ApiFetchFn } from "@bio-mcp/shared/codemode/catalog";
-import { nciCtsFetch, nciCtsPost } from "./http";
+import { nciCtsRead } from "./http";
 
-interface NciCtsAdapterEnv {
-    NCI_API_KEY?: string;
-}
-
-export function createNciCtsApiFetch(env?: NciCtsAdapterEnv): ApiFetchFn {
-    const apiKey = env?.NCI_API_KEY;
-
-    return async (request) => {
-        const path = request.path;
-
-        // POST /trials — structured trial search
-        if (path === "/trials" && request.method === "POST") {
-            const body = (request.body ?? {}) as Record<string, unknown>;
-            const response = await nciCtsPost("/trials", body, { apiKey });
-
-            if (!response.ok) {
-                let errorBody: string;
-                try {
-                    errorBody = await response.text();
-                } catch {
-                    errorBody = response.statusText;
-                }
-                const error = new Error(`HTTP ${response.status}: ${errorBody.slice(0, 200)}`) as Error & {
-                    status: number;
-                    data: unknown;
-                };
-                error.status = response.status;
-                error.data = errorBody;
-                throw error;
-            }
-
-            const data = await response.json();
-            return { status: response.status, data };
-        }
-
-        // All other endpoints are GET
-        const response = await nciCtsFetch(path, request.params, { apiKey });
-
-        if (!response.ok) {
-            let errorBody: string;
-            try {
-                errorBody = await response.text();
-            } catch {
-                errorBody = response.statusText;
-            }
-            const error = new Error(`HTTP ${response.status}: ${errorBody.slice(0, 200)}`) as Error & {
-                status: number;
-                data: unknown;
-            };
-            error.status = response.status;
-            error.data = errorBody;
-            throw error;
-        }
-
-        const contentType = response.headers.get("content-type") || "";
-        if (!contentType.includes("json")) {
-            const text = await response.text();
-            return { status: response.status, data: text };
-        }
-
-        const data = await response.json();
-        return { status: response.status, data };
-    };
+export function createNciCtsApiFetch(env?: {NCI_API_KEY?: string}): ApiFetchFn {
+  return async request => {
+    const source = await nciCtsRead(request, {apiKey: env?.NCI_API_KEY});
+    const rows = Array.isArray(source.data) ? source.data : [source.data.trials, source.data.data].find(Array.isArray);
+    const completeness = {complete: false, ...(Array.isArray(rows) ? {returned: rows.length} : {}),
+      truncation: {reason: "unknown" as const, detail: "One NCI CTS response does not establish exhaustive vocabulary, trial coverage or an atomic snapshot; trial search is not an eligibility determination."}};
+    const metadata = {completeness, provenance: source.provenance};
+    return {status: source.status, completeness, upstreamTotal: null,
+      data: Array.isArray(source.data) ? {data: source.data, _mcp: {...metadata, native_root: "array"}}
+        : {...source.data, _mcp: metadata}};
+  };
 }
